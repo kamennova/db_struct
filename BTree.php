@@ -106,6 +106,18 @@ class BNode
         return false;
     }
 
+    function get_cell_pos($search_key)
+    {
+        $counter = 0;
+        foreach ($this->keys as $key => $val) {
+            if ($key == $search_key) {
+                return $counter;
+            }
+            $counter++;
+        }
+        return false;
+    }
+
     function insert_child($child)
     {
         if (!$this->children) {
@@ -120,6 +132,17 @@ class BNode
             }
 
             array_splice($this->children, $pos, 0, [$child]);
+        }
+    }
+
+    function merge_leaves($node, $min = true)
+    {
+        foreach ($node->keys as $key => $val) {
+            $this->keys[$key] = $val;
+        }
+
+        if ($min) {
+            ksort($this->keys);
         }
     }
 
@@ -317,65 +340,95 @@ class BTree
             if (count($del_location->keys) >= $this->min_node_len() + 1) {
                 $del_location->del_data_cell($key);
             } else {
-                echo "Case 2\n";
-                $is_left = true;
-                $sibling = $del_location->get_sibling($is_left);
+                $this->del_case2($del_location, $key);
+            }
+        } else {
+            $pos = $del_location->get_cell_pos($key);
 
-                if ($sibling) {
-                    $parent = $del_location->parent;
+            if ($child = $del_location->children[$pos]) {
 
-                    // getting key to swap in parent
-                    $pos = $del_location->get_parent_child_pos();
-                    $swap_pos = $pos;
+                $c_keys_num = count($child->keys);
 
-                    if ($pos === count($parent->keys)) { // todo use is_left
-                        $swap_pos--;
-                    }
+                if ($c_keys_num >= $this->min_node_len() + 1) {
+                    $c_key_pos = $c_keys_num - 1;
+                    $c_key = $child->get_nth_key($c_key_pos);
 
-                    $p_swap_key = $parent->get_nth_key($swap_pos);
-                    $p_swap_val = $parent->keys[$p_swap_key];
+                    unset($del_location->keys[$key]);
+                    $del_location[$c_key] = $child->keys[$c_key];
+                    ksort($del_location->keys);
 
-                    if (count($sibling->keys) - 1 >= $this->min_node_len()) {
+                    $this->delete($child->keys[$c_key]); // todo del deeper
 
-                        // getting data row before swapping
-                        $swap_key = $sibling->get_extreme_key($is_left);
-                        $swap_val = $sibling->keys[$swap_key];
+                } else if ($next_child = $del_location->children[$pos + 1]) {
+                    if (count($next_child->keys) >= $this->min_node_len() + 1) {
+                        $c_key = $next_child->get_nth_key(0);
 
-                        echo "Swap key " . $swap_key . "\n";
-
-                        $sibling->del_data_cell($swap_key);
-
-                        unset($parent->keys[$p_swap_key]);
-                        $del_location->parent->keys[$swap_key] = $swap_val;
-                        ksort($parent->keys);
-
-                        $parent->short_node_output();
-
-                        $del_location->del_data_cell($key);
-                        $del_location->keys[$p_swap_key] = $p_swap_val;
+                        unset($del_location->keys[$key]);
+                        $del_location[$c_key] = $next_child->keys[$c_key];
                         ksort($del_location->keys);
-                    } else {
-                        // move parent down
-                        // merge 2 nodes
-                        // delete children
 
-//                        $p_desc = $parent->get_nth_key();
-                        unset($parent->keys[$swap_pos]);
-                        unset($parent->children[$swap_pos]);
-                        array_values($parent->children);
-
-                        $del_location->keys[$p_swap_key] = $p_swap_val;
-                        ksort($del_location->keys);
+                        $this->delete($child->keys[$c_key]);
                     }
+                } else {
+                    // Case 3c
                 }
-
             }
         }
     }
 
-    function del_case2($node, $key)
+    function del_case2($del_location, $key)
     {
+        $is_left = true;
+        $sibling = $del_location->get_sibling($is_left);
 
+
+        if ($sibling) {
+
+            $parent = $del_location->parent;
+
+            // getting key to swap in parent
+            $swap_pos = $del_location->get_parent_child_pos();
+
+            if ($swap_pos === count($parent->keys)) { // todo use is_left
+                $swap_pos--;
+            }
+
+            $p_swap_key = $parent->get_nth_key($swap_pos);
+            $p_swap_val = $parent->keys[$p_swap_key];
+
+            if (count($sibling->keys) >= $this->min_node_len() + 1) {
+
+                // getting data row before swapping
+                $swap_key = $sibling->get_extreme_key($is_left);
+                $swap_val = $sibling->keys[$swap_key];
+
+                $sibling->del_data_cell($swap_key);
+
+                unset($parent->keys[$p_swap_key]);
+
+                $parent->keys[$swap_key] = $swap_val;
+                ksort($parent->keys);
+
+                $del_location->del_data_cell($key);
+                $del_location->keys[$p_swap_key] = $p_swap_val;
+                ksort($del_location->keys);
+
+            } else {
+                // deleting
+                unset($parent->keys[$p_swap_key]);
+                unset($parent->children[$swap_pos]);
+                array_splice($parent->children, 0, 0);
+
+                $del_location->keys[$p_swap_key] = $p_swap_val;
+                ksort($del_location->keys);
+
+                $sibling->merge_leaves($del_location, $is_left);
+
+                $sibling->del_data_cell($key);
+            }
+        } else {
+            echo "OOOOOOOOOOOOOOOOOPS\n";
+        }
     }
 
 //    ----
