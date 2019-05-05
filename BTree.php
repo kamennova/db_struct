@@ -3,15 +3,13 @@
 /**
  * Class BNode
  *
- * $keys = [
- *      $key => $data
- * ]
- *
- * $children = [
- *      BNode
- * ]
- *
- * $parent = BNode
+ * @property array $children
+ *       $children = [BNode]
+ * @property array $keys
+ *      $keys = [
+ *              key => data
+ *              ]
+ * @property BNode $parent
  *
  */
 class BNode
@@ -60,7 +58,11 @@ class BNode
         // root or only-child node doesn't have siblings
         if ($this->is_root()) return false;
 
-        $siblings_num = count($this->parent->children);
+        /**
+         * @var BNode $parent
+         */
+        $parent = $this->parent;
+        $siblings_num = count($parent->children);
         if ($siblings_num < 2) return false;
 
         $pos = $this->get_parent_child_pos();
@@ -68,16 +70,15 @@ class BNode
 
         if ($pos === $siblings_num - 1) { // this node is the last on the right
             $is_left = false;
-            return $this->parent->children[$pos - 1];
+            return $parent->children[$pos - 1];
         }
 
-        return $this->parent->children[$pos + 1];
+        return $parent->children[$pos + 1];
     }
 
     function get_parent_child_pos()
     {
         for ($i = 0, $num = count($this->parent->children); $i < $num; $i++) {
-//            var_dump($this->parent->children[$i]);
             if ($this == $this->parent->children[$i]) return $i;
         }
 
@@ -118,6 +119,9 @@ class BNode
         return false;
     }
 
+    /**
+     * @param BNode $child
+     */
     function insert_child($child)
     {
         if (!$this->children) {
@@ -146,9 +150,50 @@ class BNode
         }
     }
 
+    /**
+     * @param BNode $node
+     * @param bool $smaller
+     */
+    function merge_sibling_in($node, $smaller)
+    {
+        foreach ($node->keys as $key => $val) {
+            $this->keys[$key] = $val;
+        }
+
+        if ($smaller) {
+            ksort($this->keys);
+        }
+
+        $push_func = $smaller ? "array_unshift" : "array_push";
+
+        if ($node->children) {
+            $num = count($node->children);
+
+            if ($smaller) {
+                for ($i = $num - 1; $i >= 0; $i--) {
+                    $child = $node->children[$i];
+                    $child->parent = $this;
+                    $push_func($this->children, $child);
+                }
+            } else {
+                for ($i = 0; $i < $num; $i++) {
+                    $child = $node->children[$i];
+                    $child->parent = $this;
+                    $push_func($this->children, $child);
+                }
+            }
+        }
+
+        $sib_pos = $node->get_parent_child_pos();
+        unset($node->parent->children[$sib_pos]);
+        array_splice($node->parent->children, 0, 0);
+
+        unset($node);
+    }
+
 //    ---
 
-    function del_data_cell($key)
+    function delete_data_cell($key)
     {
         unset($this->keys[$key]);
     }
@@ -170,6 +215,9 @@ class BNode
         echo "]\nChildren: \n";
 
         if ($this->children) {
+            /**
+             * @var BNode $child
+             */
             foreach ($this->children as $child) {
                 $child->node_output($recursion + 1);
             }
@@ -237,6 +285,9 @@ class BTree
         $this->output_step($this->root);
     }
 
+    /**
+     * @param BNode $node
+     */
     function output_step($node)
     {
         echo "{ \n";
@@ -244,6 +295,9 @@ class BTree
         if ($node->children) {
             echo "Children: \n";
 
+            /**
+             * @var BNode $child
+             */
             foreach ($node->children as $child) {
                 $child->short_node_output();
             }
@@ -264,6 +318,11 @@ class BTree
         $this->repair_node($accepting_node);
     }
 
+    /**
+     * @param BNode $node
+     * @param int $key
+     * @return mixed
+     */
     function descend_to_leaf($node, $key)
     {
         if ($node->is_leaf())
@@ -289,6 +348,9 @@ class BTree
         $this->split_node($node);
     }
 
+    /**
+     * @param BNode $node
+     */
     function split_node($node)
     {
         $l_node_len = $this->t - 1;
@@ -336,54 +398,49 @@ class BTree
             return false;
         }
 
+        return $this->delete_from_node($del_location, $key);
+    }
+
+
+    /**
+     * @param BNode $del_location
+     * @param int $key
+     * @return boolean
+     */
+    function delete_from_node($del_location, $key)
+    {
         if ($del_location->is_leaf()) {
             if (count($del_location->keys) >= $this->min_node_len() + 1) {
-                $del_location->del_data_cell($key);
+                $del_location->delete_data_cell($key);
+                return true;
             } else {
-                $this->del_case2($del_location, $key);
+                return $this->del_case2($del_location, $key);
             }
         } else {
-            $pos = $del_location->get_cell_pos($key);
-
-            if ($child = $del_location->children[$pos]) {
-
-                $c_keys_num = count($child->keys);
-
-                if ($c_keys_num >= $this->min_node_len() + 1) {
-                    $c_key_pos = $c_keys_num - 1;
-                    $c_key = $child->get_nth_key($c_key_pos);
-
-                    unset($del_location->keys[$key]);
-                    $del_location[$c_key] = $child->keys[$c_key];
-                    ksort($del_location->keys);
-
-                    $this->delete($child->keys[$c_key]); // todo del deeper
-
-                } else if ($next_child = $del_location->children[$pos + 1]) {
-                    if (count($next_child->keys) >= $this->min_node_len() + 1) {
-                        $c_key = $next_child->get_nth_key(0);
-
-                        unset($del_location->keys[$key]);
-                        $del_location[$c_key] = $next_child->keys[$c_key];
-                        ksort($del_location->keys);
-
-                        $this->delete($child->keys[$c_key]);
-                    }
-                } else {
-                    // Case 3c
-                }
-            }
+            return $this->del_case3($del_location, $key);
         }
     }
 
+    /**
+     * @param BNode $del_location
+     * @param int $key
+     * @return bool
+     */
     function del_case2($del_location, $key)
     {
         $is_left = true;
+
+        /**
+         * @var BNode $sibling
+         */
         $sibling = $del_location->get_sibling($is_left);
 
-
         if ($sibling) {
+            echo "Case 2A\n";
 
+            /**
+             * @var BNode $parent
+             */
             $parent = $del_location->parent;
 
             // getting key to swap in parent
@@ -402,17 +459,18 @@ class BTree
                 $swap_key = $sibling->get_extreme_key($is_left);
                 $swap_val = $sibling->keys[$swap_key];
 
-                $sibling->del_data_cell($swap_key);
+                $sibling->delete_data_cell($swap_key);
 
                 unset($parent->keys[$p_swap_key]);
 
                 $parent->keys[$swap_key] = $swap_val;
                 ksort($parent->keys);
 
-                $del_location->del_data_cell($key);
+                $del_location->delete_data_cell($key);
                 $del_location->keys[$p_swap_key] = $p_swap_val;
                 ksort($del_location->keys);
 
+                return true;
             } else {
                 // deleting
                 unset($parent->keys[$p_swap_key]);
@@ -422,12 +480,86 @@ class BTree
                 $del_location->keys[$p_swap_key] = $p_swap_val;
                 ksort($del_location->keys);
 
-                $sibling->merge_leaves($del_location, $is_left);
+                $sibling->merge_leaves($del_location, $is_left); // todo merge sibling in
 
-                $sibling->del_data_cell($key);
+                $sibling->delete_data_cell($key);
+                return true;
             }
         } else {
             echo "OOOOOOOOOOOOOOOOOPS\n";
+            return false;
+        }
+    }
+
+    /**
+     * @param BNode $del_location
+     * @param int $key
+     * @return bool
+     */
+    function del_case3($del_location, $key)
+    {
+        $pos = $del_location->get_cell_pos($key);
+
+        /**
+         * @var BNode $child
+         */
+        if ($child = $del_location->children[$pos]) {
+
+            $c_keys_num = count($child->keys);
+
+            if ($c_keys_num >= $this->min_node_len() + 1) {
+                echo "Case 3A\n";
+
+                $c_key_pos = $c_keys_num - 1;
+                $c_key = $child->get_nth_key($c_key_pos);
+
+                unset($del_location->keys[$key]);
+                $del_location->keys[$c_key] = $child->keys[$c_key];
+                ksort($del_location->keys);
+
+                return $this->delete_from_node($child, $c_key);
+
+            } else if (
+                /**
+                 * @var BNode $next_child
+                 */
+            $next_child = $del_location->children[$pos + 1]) {
+
+                if (count($del_location->children[$pos + 1]->keys) >= $this->min_node_len() + 1) {
+
+                    $c_key = $next_child->get_nth_key(0);
+
+                    unset($del_location->keys[$key]);
+                    $del_location->keys[$c_key] = $next_child->keys[$c_key];
+                    ksort($del_location->keys);
+
+                    return $this->delete_from_node($next_child, $c_key);
+                } else {
+                    echo "cAse 3c\n";
+
+                    // moving $key=>val data cell to prev child
+                    $child->keys[$key] = $del_location->keys[$key];
+                    // deleting data cell from del_location
+                    $del_location->delete_data_cell($key);
+                    // merging the two children
+                    $next_child->merge_sibling_in($child, true);
+
+                    if ($del_location->is_root() && count($del_location->keys) == 0) {
+                        $this->root = $next_child;
+                        $next_child->parent = null;
+                        unset($del_location);
+                    }
+
+                    // recursive deletion of $key
+                    return $this->delete_from_node($next_child, $key);
+                }
+            } else {
+                echo "OOOPS\n";
+                return false;
+            }
+        } else {
+            echo "OOOPS\n";
+            return false;
         }
     }
 
@@ -438,13 +570,17 @@ class BTree
         return $this->find_node_step($this->root, $key);
     }
 
+    /**
+     * @param BNode $node
+     * @param int $del_key
+     * @return mixed
+     */
     function find_node_step($node, $del_key)
     {
         $counter = 0;
         foreach ($node->keys as $node_key => $data) {
             if ($node_key > $del_key) {
                 break;
-//                return $this->find_node_step($node->children[$counter], $del_key);
             } else if ($node_key == $del_key) { // found
                 return $node;
             }
