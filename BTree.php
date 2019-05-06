@@ -29,6 +29,14 @@ class BTree
     public $editor;
     public $formatter;
 
+    /**
+     * BTree constructor.
+     * @param $t
+     * @param $filename
+     * @param FileEditor $editor
+     * @param bool $is_empty
+     * @param int $last_line_pos
+     */
     function __construct($t, $filename, $editor, $is_empty = false, $last_line_pos = 1)
     {
         $this->t = $t;
@@ -127,6 +135,7 @@ class BTree
         }
 
         $child = $this->get_node($node->children_pos[$i], false);
+        var_dump($child);
         return $this->descend_to_leaf($child, $key);
     }
 
@@ -151,9 +160,9 @@ class BTree
         $median_data_pos = $node->get_nth_value_pos($l_node_len);
 
         // creating right node
-        $r_node_keys = array_slice($node->keys, $l_node_len + 1, null, true);
-        $r_node_children = $node->children ? array_slice($node->children, $l_node_len + 1) : null;
-        $r_node = new BNode($this->last_line_pos + 1, $r_node_keys, $r_node_children, $node->parent);
+        $r_node_keys = array_slice($node->keys, $l_node_len + 1);
+        $r_node_children_pos = $node->children_pos ? array_slice($node->children_pos, $l_node_len + 1) : null;
+        $r_node = $this->new_node($this->last_line_pos + 1, $r_node_keys, $r_node_children_pos, $node->parent_pos);
 
         // deleting right node properties from old node
         $l_node_keys = array_slice($node->keys, 0, $l_node_len, true);
@@ -182,9 +191,21 @@ class BTree
         }
     }
 
-    function new_node($keys, $children, $parent)
+    function new_node($keys, $children_pos, $parent_pos, $values_pos)
     {
-        $node = new BNode($this->last_line_pos + 1, $keys, $children, $parent);
+        $str = $this->formatter->new_node_str('', $parent_pos, $keys, $values_pos, $children_pos);
+
+        // update children parent
+        foreach ($children_pos as $pos) {
+            $str = $this->formatter->get_pos_str($this->last_line_pos + 1);
+
+            $child_parent_pos = $this->editor->line_pos($pos) + $this->formatter->get_start_pos('parent_pos');
+            $this->editor->write($str, $child_parent_pos, true);
+        }
+
+        $this->editor->write($str, $this->last_line_pos + 1);
+
+        return new BNode($this->last_line_pos + 1, $keys, $parent_pos, $children_pos);
     }
 
 //    ---
@@ -363,7 +384,8 @@ class BTree
 
     function find_node($key)
     {
-        return $this->find_node_step($this->root, $key);
+        $root = $this->get_node($this->root_pos, false);
+        return $this->find_node_step($root, $key);
     }
 
     /**
@@ -374,10 +396,10 @@ class BTree
     function find_node_step($node, $del_key)
     {
         $counter = 0;
-        foreach ($node->keys as $node_key => $data) {
-            if ($node_key > $del_key) {
+        foreach ($node->keys as $key) {
+            if ($key > $del_key) {
                 break;
-            } else if ($node_key == $del_key) { // found
+            } else if ($key == $del_key) { // found
                 return $node;
             }
 
@@ -388,27 +410,43 @@ class BTree
             return false;
         }
 
-        return $this->find_node_step($node->children[$counter], $del_key);
+        $child = $this->get_node($node->children_pos[$counter], false);
+        return $this->find_node_step($child, $del_key);
     }
 
 //    ---
 
-    function find_by_key($key)
+    function get_value($key)
     {
+        /**
+         * @var BNode $location
+         */
         $location = $this->find_node($key);
 
         if (!$location) return false;
 
-        return $location->keys[$key];
+        $pos = $location->get_cell_pos($key);
+        $line_pos = $location->values_pos[$pos];
+        $entry = $this->editor->get_line($line_pos);
+
+        return $this->formatter->get_entry_value($entry);
     }
 
     function edit_data_by_key($key, $new_data)
     {
+        /**
+         * @var BNode location
+         */
         $location = $this->find_node($key);
 
         if (!$location) return false;
 
-        $location->keys[$key] = $new_data;
+        $pos = $location->get_cell_pos($key);
+        $location->values[$pos] = $new_data;
+
+        $entry = $this->formatter->new_entry_str($new_data);
+        $this->editor->write($entry, $location->values_pos[$pos]);
+
         return true;
     }
 
@@ -420,19 +458,21 @@ class BTree
         $new_pos_str = $this->formatter->get_pos_str($new_pos);
         $write_pos = $this->editor->current_pos() + $this->formatter->get_parent_pos_start();
 
-        $this->editor->write($write_pos, $new_pos_str, true);
+        $this->editor->write($new_pos_str, $write_pos, true);
     }
 
     function add_data_cell($node, $key, $data)
     {
         // writing new data entry to database
         $new_entry = $this->formatter->new_entry_str($data);
-        $this->editor->write($this->last_line_pos, $new_entry);
+        $this->editor->write($new_entry, $this->last_line_pos + 1);
         $this->last_line_pos++;
+
+        $node->values_pos [] = $this->last_line_pos - 1;
 
         // updating node key and data pos
         $str = $this->editor->get_line($node->pos);
-        $this->formatter->add_node_data_cell($str, $key, $this->last_line_pos);
-        $this->editor->write($node->pos, $str);
+        $this->formatter->add_node_data_cell($str, $key, $this->last_line_pos - 1);
+        $this->editor->write($str, $node->pos - 1);
     }
 }
