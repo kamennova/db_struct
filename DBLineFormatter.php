@@ -13,6 +13,7 @@ class DBLineFormatter
     public $is_inner_delimited = false;
     public $delimiter;
     public $d_len = 0;
+    public $i_d_len = 0;
 
     public $n_format;
     public $t;
@@ -28,31 +29,37 @@ class DBLineFormatter
         $this->empty_str = str_repeat(Database::$empty_char, $this->pos_len);
     }
 
-    function get_keys($str)
+    function get_property_arr($name, $str)
     {
-        $keys = [];
-        $start = $this->n_format['flag']['length'] + $this->pos_len;
-        if ($this->is_delimited) {
-            $start += 2; // delimiters length sum
+        $arr = [];
+        $start = $this->get_start_pos($name);
+
+        $num = 0;
+        switch ($name) {
+            case ('keys' || 'values_pos'):
+                $num = 2 * $this->t - 1;
+                break;
+            case 'children_pos':
+                $num = 2 * $this->t;
+                break;
         }
 
-        for ($i = 0, $num = $this->t * 2 - 1; $i < $num; $i++) {
-            $key = substr($str, $start, $start + $this->pos_len);
-            $key = str_replace(Database::$empty_char, '', $str);
+        $data_len = $this->pos_len + $this->i_d_len;
 
-            if ($key === '') {
+        for ($i = 0; $i < $num; $i++) {
+            $elem = substr($str, $start, $data_len);
+            $elem = str_replace(Database::$empty_char, '', $elem);
+
+            if ($elem === '') {
                 break;
             }
 
-            $keys [] = intval($key);
+            $arr [] = intval($elem);
 
-            $start = $start + $this->pos_len;
-            if ($this->is_inner_delimited) {
-                $start++;
-            }
+            $start += $data_len;
         }
 
-        return $keys;
+        return $arr;
     }
 
 //    ---
@@ -188,7 +195,7 @@ class DBLineFormatter
         $parent_pos = $this->get_substr($str, $start, $this->pos_len + $d_len);
 
         $keys_str = $this->get_substr($str, $start, ($this->pos_len + $i_d_len) * $this->t * 2 - 1);
-        $keys = $this->get_keys($keys_str);
+        $keys = $this->get_property_arr('keys', $keys_str);
 
         return new BNode($pos, $keys);
     }
@@ -219,6 +226,10 @@ class DBLineFormatter
                 return $this->get_parent_pos_start();
             case 'keys' :
                 return $this->get_keys_start();
+            case 'children_pos':
+                return $this->get_children_pos_start();
+            case'values_pos':
+                return $this->get_values_pos_start();
             default:
                 echo 'fdfd';
                 return 0;
@@ -229,36 +240,44 @@ class DBLineFormatter
 
     function add_node_data_cell(&$str, $key, $value_pos)
     {
-        $keys = $this->get_keys($str);
+        $keys = $this->get_property_arr('keys', $str);
+        $values_pos = $this->get_property_arr('values_pos', $str);
+
         $pos = $this->get_elem_pos($keys, $key);
-        $this->replace_key($str, $key, $pos);
 
-        if ($pos < count($keys)) {
-            $shifted_keys = $keys;
-            array_slice($shifted_keys, $pos);
+        $this->replace_properties($str, $keys, $key, $pos, 'keys');
+        $this->replace_properties($str, $values_pos, $value_pos, $pos, 'values_pos');
+    }
 
-            $this->replace_key($str, $key, $pos);
+    function replace_properties(&$str, $arr, $prop, $pos, $name)
+    {
+        $this->replace_property($str, $prop, $pos, $name);
 
-            foreach ($shifted_keys as $shifted_key) {
-                $this->replace_key($str, $shifted_key, ++$pos);
+        if ($pos < count($arr)) {
+            $shifted_elems = array_slice($arr, $pos);
+
+            foreach ($shifted_elems as $shifted) {
+                $this->replace_property($str, $shifted, ++$pos, $name);
             }
         }
     }
 
-    function replace_key(&$str, $key, $pos)
+    function replace_property(&$str, $prop, $pos, $name = 'keys')
     {
-        $key_str = $this->get_pos_str($key);
-        $start = $this->get_keys_start() + $pos * ($this->pos_len + $this->d_len);
+        $prop_str = $this->get_pos_str($prop);
+        $start = $this->get_start_pos($name) + $pos * ($this->pos_len + $this->d_len);
 
-        $str = substr($str, 0, $start) . $key_str . substr($str, $start + strlen($key_str));
+        $str = substr($str, 0, $start) . $prop_str . substr($str, $start + strlen($prop_str));
     }
+
+//    ---
 
     function get_elem_pos($arr, $elem)
     {
         $counter = 0;
 
         foreach ($arr as $num) {
-            if ($num > $counter) break;
+            if ($num > $elem) break;
             $counter++;
         }
 
@@ -276,5 +295,15 @@ class DBLineFormatter
     function get_keys_start()
     {
         return $this->get_parent_pos_start() + $this->pos_len + $this->d_len;
+    }
+
+    function get_values_pos_start()
+    {
+        return $this->get_keys_start() + ($this->pos_len + $this->i_d_len) * ($this->t * 2 - 1) + $this->d_len;
+    }
+
+    function get_children_pos_start()
+    {
+        return $this->get_values_pos_start() + ($this->pos_len + $this->i_d_len) * ($this->t * 2) + $this->d_len;
     }
 }
