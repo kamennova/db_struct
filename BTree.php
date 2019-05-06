@@ -1,267 +1,57 @@
 <?php
 
+require_once "BNode.php";
+require_once "DBLineFormatter.php";
+require_once "FileEditor.php";
+
 /**
- * Class BNode
+ * Class BTree provides structure for efficient data storing
  *
- * @property array $children
- *       $children = [BNode]
- * @property array $keys
- *      $keys = [
- *              key => data
- *              ]
- * @property BNode $parent
+ * @property int $t
+ * @property BNode $root
+ *
+ * @property string $filename
+ * @property int $last_line_pos;
+ * @property int $root_pos
  *
  */
-class BNode
-{
-    public $keys;
-    public $children;
-    public $parent;
-
-    function __construct($b_keys = null, $b_children = null, $b_parent = null)
-    {
-        if ($b_keys) {
-            $this->keys = $b_keys;
-        }
-
-        $this->children = $b_children;
-        if ($this->children) {
-            foreach ($this->children as $child) {
-                $child->parent = $this;
-            }
-        }
-
-        $this->parent = $b_parent;
-    }
-
-//    ---
-
-    function is_leaf()
-    {
-        return ($this->children == null || count($this->children) == 0);
-    }
-
-    function is_root()
-    {
-        return $this->parent == null;
-    }
-
-    function get_extreme_key($min)
-    {
-        if ($min == true) return $this->get_nth_key(0);
-
-        return $this->get_nth_key(count($this->keys) - 1);
-    }
-
-    function get_sibling(&$is_left = true)
-    {
-        // root or only-child node doesn't have siblings
-        if ($this->is_root()) return false;
-
-        /**
-         * @var BNode $parent
-         */
-        $parent = $this->parent;
-        $siblings_num = count($parent->children);
-        if ($siblings_num < 2) return false;
-
-        $pos = $this->get_parent_child_pos();
-        echo "Pos" . $pos . "\n";
-
-        if ($pos === $siblings_num - 1) { // this node is the last on the right
-            $is_left = false;
-            return $parent->children[$pos - 1];
-        }
-
-        return $parent->children[$pos + 1];
-    }
-
-    function get_parent_child_pos()
-    {
-        for ($i = 0, $num = count($this->parent->children); $i < $num; $i++) {
-            if ($this == $this->parent->children[$i]) return $i;
-        }
-
-        return false;
-    }
-
-    function get_nth_data_value($index)
-    {
-        $i = 0;
-        foreach ($this->keys as $data) {
-            if ($i == $index) return $data;
-            $i++;
-        }
-
-        return false;
-    }
-
-    function get_nth_key($index)
-    {
-        $i = 0;
-        foreach ($this->keys as $key => $data) {
-            if ($i == $index) return $key;
-            $i++;
-        }
-
-        return false;
-    }
-
-    function get_cell_pos($search_key)
-    {
-        $counter = 0;
-        foreach ($this->keys as $key => $val) {
-            if ($key == $search_key) {
-                return $counter;
-            }
-            $counter++;
-        }
-        return false;
-    }
-
-    /**
-     * @param BNode $child
-     */
-    function insert_child($child)
-    {
-        if (!$this->children) {
-            $this->children = $child;
-        } else {
-            $pos = 0;
-            $child_data = $child->get_nth_key(0);
-            foreach ($this->keys as $key => $data) {
-                if ($key > $child_data)
-                    break;
-                $pos++;
-            }
-
-            array_splice($this->children, $pos, 0, [$child]);
-        }
-    }
-
-    function merge_leaves($node, $min = true)
-    {
-        foreach ($node->keys as $key => $val) {
-            $this->keys[$key] = $val;
-        }
-
-        if ($min) {
-            ksort($this->keys);
-        }
-    }
-
-    /**
-     * @param BNode $node
-     * @param bool $smaller
-     */
-    function merge_sibling_in($node, $smaller)
-    {
-        foreach ($node->keys as $key => $val) {
-            $this->keys[$key] = $val;
-        }
-
-        if ($smaller) {
-            ksort($this->keys);
-        }
-
-        $push_func = $smaller ? "array_unshift" : "array_push";
-
-        if ($node->children) {
-            $num = count($node->children);
-
-            if ($smaller) {
-                for ($i = $num - 1; $i >= 0; $i--) {
-                    $child = $node->children[$i];
-                    $child->parent = $this;
-                    $push_func($this->children, $child);
-                }
-            } else {
-                for ($i = 0; $i < $num; $i++) {
-                    $child = $node->children[$i];
-                    $child->parent = $this;
-                    $push_func($this->children, $child);
-                }
-            }
-        }
-
-        $sib_pos = $node->get_parent_child_pos();
-        unset($node->parent->children[$sib_pos]);
-        array_splice($node->parent->children, 0, 0);
-
-        unset($node);
-    }
-
-//    ---
-
-    function delete_data_cell($key)
-    {
-        unset($this->keys[$key]);
-    }
-
-//---
-
-    function node_output($recursion = 0)
-    {
-        if ($recursion > 1) return;
-
-        echo "{\nData [ ";
-
-        if ($this->keys) {
-            foreach ($this->keys as $key => $val) {
-                echo $key . " => " . $val . ", ";
-            }
-        }
-
-        echo "]\nChildren: \n";
-
-        if ($this->children) {
-            /**
-             * @var BNode $child
-             */
-            foreach ($this->children as $child) {
-                $child->node_output($recursion + 1);
-            }
-        }
-
-        if ($this->parent) {
-            echo "-----\nParent: \n";
-            $this->parent->node_output($recursion + 1);
-        }
-
-        echo "}\n";
-    }
-
-    function short_node_output()
-    {
-        echo "Data [ ";
-
-        if ($this->keys) {
-            foreach ($this->keys as $key => $val) {
-                echo $key . " => " . $val . ", ";
-            }
-        }
-
-        echo "]\n";
-    }
-}
-
 class BTree
 {
     public $t;
     public $root;
 
-    function __construct($t = 500)
+//    --- db modifications ---
+
+    public $filename;
+    public $last_line_pos;
+    public $root_pos;
+
+    public $editor;
+    public $formatter;
+
+    function __construct($t, $filename, $editor, $is_empty = false, $last_line_pos = 1)
     {
         $this->t = $t;
-        $this->root = new BNode();
+        $this->filename = $filename;
+        $this->last_line_pos = $last_line_pos;
 
-        echo "Min node len: " . ($t - 1) . ", max: " . (2 * $t - 1) . "\n";
+        $this->formatter = new DBLineFormatter($this->t);
+        $this->editor = $editor;
+
+        if ($is_empty) {
+            // inserting empty root node line
+            $this->insert_empty_node();
+        }
+
+        $this->root_pos = 1;
+
+//        $this->test();
     }
 
     function min_node_len()
     {
-//        return $this->t - 1; // todo temporary
-        return 2;
+        return $this->t - 1;
+//        return 2;// todo temporary
     }
 
     function max_node_len()
@@ -271,6 +61,13 @@ class BTree
 
 //    ---
 
+    function test()
+    {
+        $str = $this->formatter->new_node_str('w', 1900, [2, 4, 700, 1000, 10000], [4, 324, 27, 99999, 14], [1, 2, 3, 599, 56, 78]);
+        $entry_str = $this->formatter->new_entry_str(120);
+        var_dump($entry_str);
+    }
+
     function build_up($data_arr)
     {
         foreach ($data_arr as $key => $data) {
@@ -278,44 +75,39 @@ class BTree
         }
     }
 
-//    ---
-
-    function output()
-    {
-        $this->output_step($this->root);
-    }
-
-    /**
-     * @param BNode $node
-     */
-    function output_step($node)
-    {
-        echo "{ \n";
-        $node->short_node_output();
-        if ($node->children) {
-            echo "Children: \n";
-
-            /**
-             * @var BNode $child
-             */
-            foreach ($node->children as $child) {
-                $child->short_node_output();
-            }
-        }
-
-        echo "\n}\n";
-    }
-
-//    ---
-
     function insert($key, $data)
     {
-//        echo "=============================\n";
-//        echo "Inserting " . $key . " => " . $data . "\n";
-        $accepting_node = $this->descend_to_leaf($this->root, $key);
+        $root = $this->get_node($this->root_pos, false);
+        $accepting_node = $this->descend_to_leaf($root, $key);
         $accepting_node->keys[$key] = $data;
         ksort($accepting_node->keys);
+
         $this->repair_node($accepting_node);
+        $this->add_data_cell($accepting_node, $key, $data);
+    }
+
+    function insert_empty_node()
+    {
+        $str = $this->formatter->new_node_str();
+        $this->editor->write($str, $this->last_line_pos);
+        $this->last_line_pos++;
+    }
+
+    function get_node_line($line_pos)
+    {
+        $file = new SplFileObject($this->filename, 'r+');
+        $file->seek($line_pos);
+
+        $str = $file->current();
+        $file = null;
+        return $str;
+    }
+
+    function get_node($line_pos, $get_values)
+    {
+        $str = $this->editor->get_line($line_pos);
+
+        return $this->formatter->get_node($str, $line_pos, $get_values);
     }
 
     /**
@@ -334,17 +126,16 @@ class BTree
             if ($key < $curr) break;
         }
 
-        return $this->descend_to_leaf($node->children[$i], $key);
+        $child = $this->get_node($node->children_pos[$i], false);
+        return $this->descend_to_leaf($child, $key);
     }
 
     function repair_node($node)
     {
         if (count($node->keys) <= $this->max_node_len()) {
-//            echo "Repair not needed \n";
             return;
         }
 
-//        echo "Repairing tree \n";
         $this->split_node($node);
     }
 
@@ -356,13 +147,13 @@ class BTree
         $l_node_len = $this->t - 1;
 
         // creating median node cell to move to parent node
-        $parent_key = $node->get_nth_key($l_node_len);
-        $parent_data = $node->get_nth_data_value($l_node_len);
+        $median_key = $node->get_nth_key($l_node_len);
+        $median_data_pos = $node->get_nth_value_pos($l_node_len);
 
         // creating right node
         $r_node_keys = array_slice($node->keys, $l_node_len + 1, null, true);
         $r_node_children = $node->children ? array_slice($node->children, $l_node_len + 1) : null;
-        $r_node = new BNode($r_node_keys, $r_node_children, $node->parent);
+        $r_node = new BNode($this->last_line_pos + 1, $r_node_keys, $r_node_children, $node->parent);
 
         // deleting right node properties from old node
         $l_node_keys = array_slice($node->keys, 0, $l_node_len, true);
@@ -373,19 +164,27 @@ class BTree
 
         if ($node->is_root()) {
             // create new root node
-            $new_root = new BNode([$parent_key => $parent_data], [$node, $r_node]);
-            $this->root = $new_root;
+            $new_root_pos = $this->new_node($median_key, [$node, $r_node], null);
+//                new BNode([$median_key => $median_data], [$node, $r_node]); // todo
+            $this->root_pos = $new_root_pos;
 
-            $node->parent = $this->root;
-            $r_node->parent = $this->root;
+            $this->update_node_parent_pos($node->pos, $new_root_pos);
+            $this->update_node_parent_pos($r_node->pos, $new_root_pos);
+//            $node->parent = $this->root; // update parent val
+//            $r_node->parent = $this->root;
         } else {
-            $node->parent->keys[$parent_key] = $parent_data;
+            $node->parent->keys[$median_key] = $parent_data; // todo
             ksort($node->parent->keys);
 
             $node->parent->insert_child($r_node);
             ksort($node->keys);
             $this->repair_node($node->parent);
         }
+    }
+
+    function new_node($keys, $children, $parent)
+    {
+        $node = new BNode($this->last_line_pos + 1, $keys, $children, $parent);
     }
 
 //    ---
@@ -436,7 +235,6 @@ class BTree
         $sibling = $del_location->get_sibling($is_left);
 
         if ($sibling) {
-            echo "Case 2A\n";
 
             /**
              * @var BNode $parent
@@ -508,7 +306,6 @@ class BTree
             $c_keys_num = count($child->keys);
 
             if ($c_keys_num >= $this->min_node_len() + 1) {
-                echo "Case 3A\n";
 
                 $c_key_pos = $c_keys_num - 1;
                 $c_key = $child->get_nth_key($c_key_pos);
@@ -535,7 +332,6 @@ class BTree
 
                     return $this->delete_from_node($next_child, $c_key);
                 } else {
-                    echo "cAse 3c\n";
 
                     // moving $key=>val data cell to prev child
                     $child->keys[$key] = $del_location->keys[$key];
@@ -614,5 +410,29 @@ class BTree
 
         $location->keys[$key] = $new_data;
         return true;
+    }
+
+//    --
+
+    function update_node_parent_pos($node_pos, $new_pos)
+    {
+        $str = $this->get_node_line($node_pos);
+        $new_pos_str = $this->formatter->get_pos_str($new_pos);
+        $write_pos = $this->editor->current_pos() + $this->formatter->get_parent_pos_start();
+
+        $this->editor->write($write_pos, $new_pos_str, true);
+    }
+
+    function add_data_cell($node, $key, $data)
+    {
+        // writing new data entry to database
+        $new_entry = $this->formatter->new_entry_str($data);
+        $this->editor->write($this->last_line_pos, $new_entry);
+        $this->last_line_pos++;
+
+        // updating node key and data pos
+        $str = $this->editor->get_line($node->pos);
+        $this->formatter->add_node_data_cell($str, $key, $this->last_line_pos);
+        $this->editor->write($node->pos, $str);
     }
 }
