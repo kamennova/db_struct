@@ -77,19 +77,13 @@ class Database
         $this->t = $t;
         $this->editor = new FileEditor($this->filename);
 
-        if ($this->editor->size() === 0) {
-            $this->add_header();
-        }
-        return;
+//        if ($this->editor->size() === 0) {
+        $this->add_header();
+//        }
 
         $this->tree = new BTree($this->t, $filename, $this->editor, true);
-
-        return;
-
         if ($data) {
-            foreach ($data as $key => $value) {
-                $this->tree->insert($key, $value);
-            }
+            $this->tree->build_up($data);
         }
 
         return;
@@ -98,22 +92,9 @@ class Database
         readline('Enter a command: ');
     }
 
-    function test()
-    {
-//        $this->spl->seek(1);
-        $this->spl->fwrite("                    88                       " . PHP_EOL);
-        $this->spl->fwrite("line22222222222222222222222222222222222222222" . PHP_EOL);
-        $this->spl->fwrite("line32222222222222222222222222222222222222222" . PHP_EOL);
-        $this->spl->fwrite("line42222222222222222222222222222222222222222" . PHP_EOL);
-
-        $this->spl->seek(0);
-        var_dump($this->spl->current());
-        $this->spl->fwrite("111111111111111111111111111111111111111111111\n");
-    }
-
     function add_header()
     {
-        $this->editor->first_write($this->t . "\n");
+        $this->editor->first_write($this->t . PHP_EOL);
     }
 
     function insert($key, $data)
