@@ -6,6 +6,8 @@ class FileEditor
     public $spl;
     public $info;
 
+    public $line_length;
+
     function __construct($filename)
     {
         $this->filename = $filename;
@@ -17,19 +19,12 @@ class FileEditor
 
     /**
      * @param string $str
-     * @param int $pos
-     * @param bool $is_binary
-     * @param bool $editing
+     * @param $line_pos
+     * @param int $offset
      */
-    function write($str, $pos, $is_binary = false, $editing = false)
+    function write($str, $line_pos, $offset = 0)
     {
-        $func = $is_binary ? "fseek" : "seek";
-        if ($editing) {
-            $pos--;
-        }
-        $this->spl->{$func}($pos);
-        ($this->spl->current());
-
+        $this->spl->fseek($line_pos * $this->line_length + $offset);
         $this->spl->fwrite($str);
     }
 
@@ -40,7 +35,7 @@ class FileEditor
 
     function get_line($pos)
     {
-        $this->spl->seek($pos);
+        $this->spl->fseek($pos * $this->line_length);
         return $this->spl->current();
     }
 
