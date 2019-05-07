@@ -10,8 +10,8 @@ require_once "FileEditor.php";
  * @property int $t
  * @property BNode $root
  *
- * @property string $filename
- * @property int $last_line_pos;
+ * @property int $last_node_pos;
+ * @property int $last_data_pos
  * @property int $root_pos
  *
  */
@@ -22,34 +22,41 @@ class BTree
 
 //    --- db modifications ---
 
-    public $filename;
-    public $last_line_pos;
+    public $last_data_pos;
+    public $last_node_pos;
+
     public $root_pos;
 
-    public $editor;
+    public $data_editor;
+    public $nodes_editor;
+
     public $formatter;
 
     /**
      * BTree constructor.
-     * @param $t
-     * @param $filename
-     * @param FileEditor $editor
+     * @param int $t
+     * @param FileEditor $data_editor
+     * @param FileEditor $nodes_editor
      * @param bool $is_empty
-     * @param int $last_line_pos
      * @param int $root_pos
      */
-    function __construct($t, $filename, $editor, $is_empty = false, $last_line_pos = 0, $root_pos = 1)
+    function __construct($t, $data_editor, $nodes_editor, $is_empty = false, $root_pos = 1)
     {
         $this->t = $t;
-        $this->filename = $filename;
-        $this->last_line_pos = $last_line_pos;
 
         $this->formatter = new DBLineFormatter($this->t);
-        $this->editor = $editor;
+
+        $this->data_editor = $data_editor;
+        $this->data_editor->line_length = $this->formatter->entry_length();
+
+        $this->nodes_editor = $nodes_editor;
+        $this->nodes_editor->line_length = $this->formatter->node_length();
 
         if ($is_empty) {
-            // inserting empty root node line
-            $this->insert_empty_node();
+            $root_pos = 0;
+            $this->last_node_pos = 0;
+            $this->last_data_pos = 0;
+            $this->insert_empty_node(); // inserting empty root node line
         }
 
         $this->root_pos = $root_pos;
@@ -70,13 +77,6 @@ class BTree
 
 //    ---
 
-    function test()
-    {
-        $str = $this->formatter->new_node_str('w', 1900, [2, 4, 700, 1000, 10000], [4, 324, 27, 99999, 14], [1, 2, 3, 599, 56, 78]);
-        $entry_str = $this->formatter->new_entry_str(120);
-        var_dump($entry_str);
-    }
-
     function build_up($data_arr)
     {
         foreach ($data_arr as $key => $data) {
@@ -91,41 +91,29 @@ class BTree
     function insert($key, $data)
     {
         $root = $this->get_node($this->root_pos, false);
+        var_dump($root);
 
         /** @var BNode $accepting_node
          */
         $accepting_node = $this->descend_to_leaf($root, $key);
-        $this->add_data_entry($data); // entry position is $this->>last_line_pos
 
-        $accepting_node->keys [] = $key;
-        sort($accepting_node->keys);
-        $pos = $accepting_node->get_cell_pos($key);
-        array_splice($accepting_node->values_pos, $pos, 0, $this->last_line_pos);
+        $is_first_record = ($accepting_node === $root) && (!$root->keys || count($root->keys) == 0);
+        $this->add_data_entry($data, $is_first_record); // entry position is $this->>last_data_pos
 
-        $this->add_data_cell($accepting_node, $key, $this->last_line_pos);
+        $accepting_node->add_data_cell($key, $this->last_data_pos);
+        $this->add_data_cell($accepting_node, $key, $this->last_data_pos);
         $this->repair_node($accepting_node);
     }
 
     function insert_empty_node()
     {
         $str = $this->formatter->new_node_str();
-        $this->editor->write($str, $this->last_line_pos);
-        $this->last_line_pos++;
-    }
-
-    function get_node_line($line_pos)
-    {
-        $file = new SplFileObject($this->filename, 'r+');
-        $file->seek($line_pos);
-
-        $str = $file->current();
-        $file = null;
-        return $str;
+        $this->nodes_editor->first_write($str);
     }
 
     function get_node($line_pos, $get_values)
     {
-        $str = $this->editor->get_line($line_pos);
+        $str = $this->nodes_editor->get_line($line_pos);
 
         return $this->formatter->get_node($str, $line_pos, $get_values);
     }
@@ -188,22 +176,19 @@ class BTree
 
         if ($node->is_root()) { // create new root node
             $this->new_node([$median_key], [$node->pos, $r_node->pos], null, [$median_value_pos]);
-            $this->root_pos = $this->last_line_pos;
+            $this->root_pos = $this->last_node_pos;
         } else {
-
-//            echo 'dsdsd';
-//            return;
-
             $parent = $this->get_node($node->parent_pos, false);
 
-            $parent->keys[] = $median_key;
-            $parent->values_pos [] = $median_value_pos; // todo
-//            $parent->keys[$median_key] = $parent_data; // todo
-            sort($node->parent->keys);
+            $child_pos = $node->get_parent_child_pos($parent) + 1;
+            array_splice($parent->children_pos, $child_pos, 0, $r_node->pos);
+            $parent->add_data_cell($median_key, $median_value_pos);
 
-            $parent->insert_child($r_node);
-            sort($node->keys);
-            $this->repair_node($parent);
+            if(count($parent->keys) > $this->max_node_len()){
+                $this->repair_node($parent);
+            } else {
+                $this->update_node_str($parent);
+            }
         }
     }
 
@@ -212,33 +197,25 @@ class BTree
      * @param $children_pos
      * @param $parent_pos
      * @param $values_pos
-     * @param null $children
      * @return BNode
      */
-    function new_node($keys, $children_pos, $parent_pos, $values_pos, $children = null)
+    function new_node($keys, $children_pos, $parent_pos, $values_pos)
     {
         $str = $this->formatter->new_node_str('', $parent_pos, $keys, $values_pos, $children_pos);
-        $this->last_line_pos++; // position of the node to be inserted
-        $this->editor->write($str, $this->last_line_pos);
+        $this->last_node_pos++; // position of the node to be inserted
+        $this->nodes_editor->write($str, $this->last_node_pos);
 
         // update children parent
         if ($children_pos) {
-            $parent = $this->formatter->get_pos_str($this->last_line_pos);
+            $parent = $this->formatter->get_pos_str($this->last_node_pos);
             $parent_start = $this->formatter->get_start_pos('parent_pos');
 
             foreach ($children_pos as $pos) {
-                if ($pos == 1) {
-                    $line_pos = 0;
-                } else {
-                    $line_pos = $this->editor->line_pos($pos);
-                }
-
-                $child_parent_pos = $line_pos + $parent_start;
-                $this->editor->write($parent, $child_parent_pos, true, true);
+                $this->nodes_editor->write($parent, $pos, $parent_start);
             }
         }
 
-        return new BNode($this->last_line_pos, $keys, $parent_pos, $children_pos, $values_pos);
+        return new BNode($this->last_node_pos, $keys, $parent_pos, $children_pos, $values_pos);
     }
 
 //    ---
@@ -460,7 +437,7 @@ class BTree
 
         $pos = $location->get_cell_pos($key);
         $line_pos = $location->values_pos[$pos];
-        $entry = $this->editor->get_line($line_pos);
+        $entry = $this->data_editor->get_line($line_pos);
 
         return $this->formatter->get_entry_value($entry);
     }
@@ -478,7 +455,7 @@ class BTree
         $location->values[$pos] = $new_data;
 
         $entry = $this->formatter->new_entry_str($new_data);
-        $this->editor->write($entry, $location->values_pos[$pos]);
+        $this->data_editor->write($entry, $location->values_pos[$pos]);
 
         return true;
     }
@@ -491,7 +468,7 @@ class BTree
     function update_node_str($node)
     {
         $str = $this->formatter->new_node_str('', $node->parent_pos, $node->keys, $node->values_pos, $node->children_pos);
-        $this->editor->write($str, $node->pos - 1);
+        $this->nodes_editor->write($str, $node->pos);
 
         if ($node->children_pos) {
             foreach ($node->children_pos as $child_pos) {
@@ -504,9 +481,8 @@ class BTree
     {
         $new_pos_str = $this->formatter->get_pos_str($new_pos);
 
-        $write_pos = $this->editor->line_pos($node_pos) + $this->formatter->get_parent_pos_start();
-
-        $this->editor->write($new_pos_str, $write_pos, true);
+        $parent_start = $this->formatter->get_parent_pos_start();
+        $this->nodes_editor->write($new_pos_str, $node_pos, $parent_start);
     }
 
     function update_node_child_pos($node_pos, $new_pos)
@@ -524,19 +500,25 @@ class BTree
         if (count($node->keys) > $this->t * 2 - 1) return;
 
         // updating node key and data pos
-        $str = $this->editor->get_line($node->pos);
+        $str = $this->nodes_editor->get_line($node->pos);
         $this->formatter->add_node_data_cell($str, $key, $value_pos);
-        $this->editor->write($str, $node->pos, false, true);
+        $this->nodes_editor->write($str, $node->pos, false);
     }
 
     /**
      * Func writing new data entry to database
      * @param $data
+     * @param $is_first_record
      */
-    function add_data_entry($data)
+    function add_data_entry($data, $is_first_record)
     {
         $new_entry = $this->formatter->new_entry_str($data);
-        $this->last_line_pos++;
-        $this->editor->write($new_entry, $this->last_line_pos);
+
+        if ($is_first_record) {
+            $this->last_data_pos = -1;
+        }
+
+        $this->last_data_pos++;
+        $this->data_editor->write($new_entry, $this->last_data_pos);
     }
 }
