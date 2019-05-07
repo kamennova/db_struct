@@ -29,7 +29,8 @@ class BNode
     // --- entry line ---
     public $values;
 
-    function __construct($pos, $keys = null, $parent_pos = null, $children_pos = null, $values_pos = null, $parent = null, $children = null)
+    function __construct($pos, $keys = null, $parent_pos = null, $children_pos = null,
+                         $values_pos = null, $parent = null, $children = null)
     {
         $this->pos = $pos;
         $this->parent_pos = $parent_pos;
@@ -88,10 +89,10 @@ class BNode
         return $parent->children[$pos + 1];
     }
 
-    function get_parent_child_pos()
+    function get_parent_child_pos($parent)
     {
-        for ($i = 0, $num = count($this->parent->children); $i < $num; $i++) {
-            if ($this == $this->parent->children[$i]) return $i;
+        for ($i = 0, $num = count($parent->children_pos); $i < $num; $i++) {
+            if ($this->pos == $parent->children_pos[$i]) return $i;
         }
 
         return false;
@@ -144,13 +145,15 @@ class BNode
 
     /**
      * @param BNode $child
+     * @return int $pos
      */
     function insert_child($child)
     {
+        $pos = 0;
+
         if (!$this->children) {
             $this->children = $child;
         } else {
-            $pos = 0;
             $child_data = $child->get_nth_key(0);
             foreach ($this->keys as $key => $data) {
                 if ($key > $child_data)
@@ -160,6 +163,8 @@ class BNode
 
             array_splice($this->children, $pos, 0, [$child]);
         }
+
+        return $pos;
     }
 
     function insert_data_cell()
@@ -217,6 +222,13 @@ class BNode
         array_splice($node->parent->children, 0, 0);
 
         unset($node);
+    }
+
+    function add_data_cell($key, $value_pos){
+        $this->keys [] = $key;
+        sort($this->keys);
+        $key_pos = $this->get_cell_pos($key);
+        array_splice($this->values_pos, $key_pos, 0, $value_pos);
     }
 
 //    ---
