@@ -9,18 +9,26 @@ class FileEditor
     function __construct($filename)
     {
         $this->filename = $filename;
-        $this->spl = new SplFileObject($this->filename, 'r+');
-        $this->info = new SplFileInfo($this->filename);
+        $this->spl = new SplFileObject($this->filename, 'w+');
 
+        $this->spl->fseek(0);
         $this->spl->ftruncate(0); // todo temporary
     }
 
-    function write($str, $pos, $is_binary = false)
+    /**
+     * @param string $str
+     * @param int $pos
+     * @param bool $is_binary
+     * @param bool $editing
+     */
+    function write($str, $pos, $is_binary = false, $editing = false)
     {
         $func = $is_binary ? "fseek" : "seek";
-        var_dump($this->spl->{$func}($pos));
-
-        var_dump($this->spl->current());
+        if ($editing) {
+            $pos--;
+        }
+        $this->spl->{$func}($pos);
+        ($this->spl->current());
 
         $this->spl->fwrite($str);
     }
@@ -41,7 +49,19 @@ class FileEditor
         return $this->spl->ftell();
     }
 
-    function size(){
+    function line_pos($pos)
+    {
+        $this->spl->seek($pos - 1);
+        $prev = $this->spl->ftell();
+        $this->spl->seek($pos);
+        $curr = $this->spl->ftell();
+
+        return $prev - ($curr - $prev);
+    }
+
+    function size()
+    {
+        $this->info = new SplFileInfo($this->filename);
         return $this->info->getSize();
     }
 }
