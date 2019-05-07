@@ -52,11 +52,14 @@ class DBLineFormatter
 
         $num = 0;
         switch ($name) {
-            case ('keys' || 'values_pos'):
-                $num = 2 * $this->t - 1;
-                break;
             case 'children_pos':
                 $num = 2 * $this->t;
+                break;
+            case 'keys':
+                $num = 2 * $this->t - 1;
+                break;
+            case   'values_pos':
+                $num = 2 * $this->t - 1;
                 break;
         }
 
@@ -308,6 +311,18 @@ class DBLineFormatter
 
     function get_children_pos_start()
     {
-        return $this->get_values_pos_start() + ($this->pos_len + $this->i_d_len) * ($this->t * 2 -1) + $this->d_len;
+        return $this->get_values_pos_start() + ($this->pos_len + $this->i_d_len) * ($this->t * 2 - 1) + $this->d_len;
+    }
+
+    function node_length()
+    {
+        return $this->get_children_pos_start() + ($this->pos_len + $this->i_d_len) * ($this->t * 2) + strlen(PHP_EOL);
+    }
+
+    function entry_length()
+    {
+        $max_data_len = Database::$format['entry']['data']['length'];
+
+        return $max_data_len + $this->d_len + strlen($max_data_len . PHP_EOL);
     }
 }
