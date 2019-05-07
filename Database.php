@@ -17,7 +17,10 @@ class Database
 {
     public $t;
     public $tree;
-    public $filename;
+
+    public $header_file;
+    public $data_file;
+    public $nodes_file;
 
     /**
      * @var array $format sets node and entry string structure = [
@@ -69,19 +72,28 @@ class Database
     static public $position_length = 5;
     static public $empty_char = '|';
 
-    public $editor;
+    public $data_editor;
+    public $nodes_editor;
+    public $header_editor;
 
-    function __construct($filename, $t = 200, $data = null)
+    function __construct($header_file, $nodes_file, $data_file, $t = 200, $data = null)
     {
-        $this->filename = $filename;
+        $this->header_file = $header_file;
+        $this->nodes_file = $nodes_file;
+        $this->data_file = $data_file;
+
         $this->t = $t;
-        $this->editor = new FileEditor($this->filename);
+
+        $this->data_editor = new FileEditor($this->data_file);
+        $this->nodes_editor = new FileEditor($this->nodes_file);
+        $this->header_editor = new FileEditor($this->header_file);
+
 
 //        if ($this->editor->size() === 0) {
         $this->add_header();
 //        }
 
-        $this->tree = new BTree($this->t, $filename, $this->editor, true);
+        $this->tree = new BTree($this->t, $this->data_editor, $this->nodes_editor, true, 0);
         if ($data) {
             $this->tree->build_up($data);
         }
@@ -94,7 +106,7 @@ class Database
 
     function add_header()
     {
-        $this->editor->first_write($this->t . PHP_EOL);
+        $this->header_editor->first_write($this->t . PHP_EOL);
     }
 
     function insert($key, $data)
