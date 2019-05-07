@@ -6,42 +6,45 @@
  * @property array $children
  *       $children = [BNode]
  * @property array $keys
- *      $keys = [
- *              key => data
- *              ]
  * @property BNode $parent
  *
  * @property int $pos
  * @property int $parent_pos
  * @property array $children_pos
+ * @property array $values_pos
  */
 class BNode
 {
-    public $keys;
-    public $values_pos;
+    public $pos;
     public $children;
     public $parent;
 
-    public $pos;
+    // --- node line ---
+    public $flag;
     public $parent_pos;
+    public $keys;
+    public $values_pos;
     public $children_pos;
 
-    function __construct($pos, $b_keys = null, $b_children = null, $b_parent = null)
+    // --- entry line ---
+    public $values;
+
+    function __construct($pos, $keys = null, $parent_pos = null, $children_pos = null, $values_pos = null, $parent = null, $children = null)
     {
         $this->pos = $pos;
+        $this->parent_pos = $parent_pos;
+        $this->keys = $keys;
+        $this->children_pos = $children_pos;
 
-        if ($b_keys) {
-            $this->keys = $b_keys;
-        }
-
-        $this->children = $b_children;
-        if ($this->children) {
+        $this->children = $children;
+        $this->values_pos = $values_pos;
+        /* if ($this->children) {
             foreach ($this->children as $child) {
                 $child->parent = $this;
             }
-        }
+        }*/
 
-        $this->parent = $b_parent;
+        $this->parent = $parent;
     }
 
 //    ---
@@ -49,12 +52,11 @@ class BNode
     function is_leaf()
     {
         return ($this->children_pos == null || count($this->children_pos) == 0);
-//        return ($this->children == null || count($this->children) == 0);
     }
 
     function is_root()
     {
-        return $this->parent == null;
+        return $this->parent_pos == null;
     }
 
     function get_extreme_key($min)
@@ -131,7 +133,7 @@ class BNode
     function get_cell_pos($search_key)
     {
         $counter = 0;
-        foreach ($this->keys as $key => $val) {
+        foreach ($this->keys as $key) {
             if ($key == $search_key) {
                 return $counter;
             }
@@ -158,6 +160,11 @@ class BNode
 
             array_splice($this->children, $pos, 0, [$child]);
         }
+    }
+
+    function insert_data_cell()
+    {
+
     }
 
     function merge_leaves($node, $min = true)
@@ -221,7 +228,8 @@ class BNode
 
 //    --
 
-    function update_parent_pos(){
+    function update_parent_pos()
+    {
 
     }
 }
