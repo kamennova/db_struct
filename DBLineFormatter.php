@@ -35,7 +35,7 @@ class DBLineFormatter
     function get_entry_value($entry)
     {
         $len = $this->get_pos_value(substr($entry, 0, $this->pos_len));
-        return substr($entry, strlen($entry) - $len);
+        return substr($entry, strlen($entry) - $len - 1); // 1 for EOL char
     }
 
     function get_pos_value($str)
@@ -197,10 +197,10 @@ class DBLineFormatter
      *
      * @param string $str
      * @param int $pos
-     * @param boolean $get_values
+     * @param boolean $get_data
      * @return BNode
      */
-    function get_node($str, $pos, $get_values)
+    function get_node($str, $pos, $get_data)
     {
         $start = 0;
         $len = $this->n_format['flag']['length'] + $this->d_len;
@@ -254,6 +254,18 @@ class DBLineFormatter
 
 //    ---
 
+    function delete_data_cell(&$str, $key_pos, $shift_back_keys, $shift_back_values_pos)
+    {
+        for ($i = 0; $i < count($shift_back_keys); $i++) {
+            $this->replace_property($str, $shift_back_keys[$i], $key_pos, 'keys');
+            $this->replace_property($str, $shift_back_values_pos[$i], $key_pos, 'values_pos');
+            $key_pos++;
+        }
+
+        $this->replace_property($str, '', $key_pos, 'keys');
+        $this->replace_property($str, '', $key_pos, 'values_pos');
+    }
+
     function update_node_child()
     {
 
@@ -261,7 +273,7 @@ class DBLineFormatter
 
     function add_node_data_cell(&$str, $key, $value_pos)
     {
-        $keys = $this->get_property_arr('keys', $str);
+        $keys = $this->get_property_arr('keys', $str); // todo param keys
         $values_pos = $this->get_property_arr('values_pos', $str);
 
         $pos = get_elem_pos($keys, $key);
@@ -283,9 +295,15 @@ class DBLineFormatter
         }
     }
 
-    function replace_property(&$str, $prop, $pos, $name = 'keys')
+    /**
+     * @param string $str node str to edit
+     * @param int $new_value
+     * @param int $pos - position of property to be edited
+     * @param string $name - property name 'keys' / 'values_pos' / 'children_pos'
+     */
+    function replace_property(&$str, $new_value, $pos, $name = 'keys')
     {
-        $prop_str = $this->get_pos_str($prop);
+        $prop_str = $this->get_pos_str($new_value);
         $start = $this->get_start_pos($name) + $pos * ($this->pos_len + $this->d_len);
 
         $str = substr($str, 0, $start) . $prop_str . substr($str, $start + strlen($prop_str));
