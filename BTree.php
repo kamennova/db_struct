@@ -240,6 +240,7 @@ class BTree
     {
         if ($del_location->is_leaf()) {
             if (count($del_location->keys) >= $this->min_node_len() + 1) {
+                echo "Case 1\n";
                 $this->delete_data_cell($del_location, $key);
                 return true;
             } else {
@@ -257,7 +258,7 @@ class BTree
      */
     function del_case2($del_location, $key)
     {
-        $is_left = true;
+        $is_right = true; // if node's immediate sibling is on the right
         echo 'case2';
 
         /**
@@ -268,48 +269,46 @@ class BTree
         /**
          * @var BNode $sibling
          */
-        $sibling = $this->get_node($del_location->get_sibling_pos($parent, $is_left));
+        $sibling = $this->get_node($del_location->get_sibling_pos($parent, $is_right));
 
         if ($sibling) {
 
-            // getting key to swap in parent
+            // getting key position to swap in parent
             $p_swap_pos = $del_location->get_parent_child_pos($parent); // todo optimize??
 
-            if (!$is_left) {
+            if (!$is_right) {
                 $p_swap_pos--;
             }
 
             $p_swap_key = $parent->keys[$p_swap_pos];
             $p_swap_value_pos = $parent->values_pos[$p_swap_pos];
 
-            if (count($sibling->keys) >= $this->min_node_len() + 1) {
-
-                echo 'AA';
-
-//                $del_key_pos = $del_location->get_cell_pos($key);
+            if (count($sibling->keys) >= $this->min_node_len() + 1) { // todo find another sibling??
+                echo "A\n";
 
                 // getting data row before swapping
-                $s_swap_pos = $sibling->get_extreme_key_pos($is_left);
+                $s_swap_pos = $sibling->get_extreme_key_pos($is_right);
                 $s_swap_key = $sibling->keys[$s_swap_pos];
                 $s_swap_value_pos = $sibling->values_pos[$s_swap_pos];
 
-                return;
+                $this->delete_data_cell($sibling, $s_swap_key);
 
-                $this->delete_data_cell($sibling, $s_swap_key); // todo ??
-
-                unset($parent->keys[$p_swap_pos]);
-
-                $parent->keys[$p_swap_pos] = $s_swap_key; // todo??
+                // moving sibling key & value pos to parent
+                $parent->keys[$p_swap_pos] = $s_swap_key;
                 $parent->values_pos[$p_swap_pos] = $s_swap_value_pos;
-//                sort($parent->keys); // todo ??
+                $this->update_node_str($parent);
 
                 $del_location->delete_data_cell($key);
-                $del_location->keys[] = $p_swap_key; // todo get pos
-                $del_location->values_pos []= $p_swap_value_pos;
-                ksort($del_location->keys);
+
+                $func = $is_right ? 'array_push': 'array_unshift';
+                $func($del_location->keys, $p_swap_key); // todo get pos
+                $func($del_location->values_pos, $p_swap_value_pos);
+                $this->update_node_str($del_location);
 
                 return true;
             } else {
+                // $del_key_pos = $del_location->get_cell_pos($key);
+
                 // deleting
                 unset($parent->keys[$p_swap_key]);
                 unset($parent->children[$swap_pos]);
