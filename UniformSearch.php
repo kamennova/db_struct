@@ -1,27 +1,24 @@
 <?php
 
-function nth_key($arr, $index)
+function uniform_search($arr, $key)
 {
-    return array_keys($arr)[$index];
+    $step = count($arr);
+    $index = -1;
+
+    return uniform_search_step($arr, $key, $step, $index, 1);
 }
 
-function key_uniform_search($arr, $key)
+function uniform_search_step($arr, $key, $step, $index, $koef)
 {
-    $g = count($arr);
-    $index = $g;
+    $step = ceil($step / 2);
+    if ($step == 0) return false;
 
-    return uniform_search_step($arr, $key, $g, $index, 0);
-}
+    $index += $koef * $step;
+    $index_key = $arr[$index];
 
-function uniform_search_step($arr, $key, $g, $index, $koef)
-{
-    $g = floor($g / 2) || 1;
-    $index = $index + $koef * $g;
+    if ($index_key == $key) return $index;
 
-    $index_key = nth_key($arr, $index);
-    if ($index_key == $key) return $arr[$key];
+    $koef = $index_key < $key ? 1 : -1;
 
-    $koef = $index_key < $key ? -1 : 1;
-
-    return uniform_search_step($arr, $key, $g, $index, $koef);
+    return uniform_search_step($arr, $key, $step, $index, $koef);
 }
