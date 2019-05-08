@@ -35,16 +35,10 @@ class BNode
         $this->pos = $pos;
         $this->parent_pos = $parent_pos;
         $this->keys = $keys;
+        $this->values_pos = $values_pos;
         $this->children_pos = $children_pos;
 
         $this->children = $children;
-        $this->values_pos = $values_pos;
-        /* if ($this->children) {
-            foreach ($this->children as $child) {
-                $child->parent = $this;
-            }
-        }*/
-
         $this->parent = $parent;
     }
 
@@ -52,7 +46,7 @@ class BNode
 
     function is_leaf()
     {
-        return ($this->children_pos == null || count($this->children_pos) == 0);
+        return $this->children_pos == null || count($this->children_pos) == 0;
     }
 
     function is_root()
@@ -60,33 +54,42 @@ class BNode
         return $this->parent_pos == null;
     }
 
-    function get_extreme_key($min)
+    function get_extreme_key_pos($min)
     {
-        if ($min == true) return $this->get_nth_key(0);
+        if ($min == true) return 0;
 
-        return $this->get_nth_key(count($this->keys) - 1);
+        return count($this->keys) - 1;
     }
 
-    function get_sibling(&$is_left = true)
+    /**
+     * @param BNode $parent
+     * @param bool $is_right if immediate sibling is on the right
+     * @param bool $get_left return left sibling (returns right by default)
+     * @return bool|mixed
+     */
+    function get_sibling_pos($parent, &$is_right = true, $get_left = false)
     {
         // root or only-child node doesn't have siblings
-        if ($this->is_root()) return false;
+        if ($this->is_root()) return false; // todo remove??
 
-        /**
-         * @var BNode $parent
-         */
-        $parent = $this->parent;
-        $siblings_num = count($parent->children);
-        if ($siblings_num < 2) return false;
+        $children_num = count($parent->children_pos);
+        if ($children_num == 1) return false;
 
-        $pos = $this->get_parent_child_pos();
+        $pos = $this->get_parent_child_pos($parent);
 
-        if ($pos === $siblings_num - 1) { // this node is the last on the right
-            $is_left = false;
-            return $parent->children[$pos - 1];
+        if ($pos === $children_num - 1) { // this node is the last on the right
+            $is_right = false;
         }
 
-        return $parent->children[$pos + 1];
+        if (!$is_right || $get_left) {
+            if ($pos == 0) {
+                return false;
+            }
+
+            return $parent->children_pos[$pos - 1];
+        }
+
+        return $parent->children_pos[$pos + 1];
     }
 
     function get_parent_child_pos($parent)
@@ -98,40 +101,7 @@ class BNode
         return false;
     }
 
-    function get_nth_data_value($index)
-    {
-        $i = 0;
-        foreach ($this->keys as $data) {
-            if ($i == $index) return $data;
-            $i++;
-        }
-
-        return false;
-    }
-
-    function get_nth_value_pos($index)
-    {
-        $i = 0;
-        foreach ($this->values_pos as $pos) {
-            if ($i == $index) return $pos;
-            $i++;
-        }
-
-        return false;
-    }
-
-    function get_nth_key($index)
-    {
-        $i = 0;
-        foreach ($this->keys as $key => $data) {
-            if ($i == $index) return $key;
-            $i++;
-        }
-
-        return false;
-    }
-
-    function get_cell_pos($search_key)
+    function get_cell_pos($search_key) // todo uniform search
     {
         $counter = 0;
         foreach ($this->keys as $key) {
@@ -140,91 +110,29 @@ class BNode
             }
             $counter++;
         }
+
         return false;
     }
 
     /**
-     * @param BNode $child
-     * @return int $pos
-     */
-    function insert_child($child)
-    {
-        $pos = 0;
-
-        if (!$this->children) {
-            $this->children = $child;
-        } else {
-            $child_data = $child->get_nth_key(0);
-            foreach ($this->keys as $key => $data) {
-                if ($key > $child_data)
-                    break;
-                $pos++;
-            }
-
-            array_splice($this->children, $pos, 0, [$child]);
-        }
-
-        return $pos;
-    }
-
-    function insert_data_cell()
-    {
-
-    }
-
-    function merge_leaves($node, $min = true)
-    {
-        foreach ($node->keys as $key => $val) {
-            $this->keys[$key] = $val;
-        }
-
-        if ($min) {
-            ksort($this->keys);
-        }
-    }
-
-    /**
      * @param BNode $node
-     * @param bool $smaller
+     * @param bool $is_left if $node is on the left
      */
-    function merge_sibling_in($node, $smaller)
+    function merge_sibling_in($node, $is_left)
     {
-        foreach ($node->keys as $key => $val) {
-            $this->keys[$key] = $val;
+        $push_func = $is_left ? "array_prepend" : "array_append";
+
+        $push_func($this->keys, $node->keys);
+        $push_func($this->values_pos, $node->values_pos);
+
+
+        if ($node->children_pos) {
+            $push_func($this->children_pos, $node->children_pos);
         }
-
-        if ($smaller) {
-            ksort($this->keys);
-        }
-
-        $push_func = $smaller ? "array_unshift" : "array_push";
-
-        if ($node->children) {
-            $num = count($node->children);
-
-            if ($smaller) {
-                for ($i = $num - 1; $i >= 0; $i--) {
-                    $child = $node->children[$i];
-                    $child->parent = $this;
-                    $push_func($this->children, $child);
-                }
-            } else {
-                for ($i = 0; $i < $num; $i++) {
-                    $child = $node->children[$i];
-                    $child->parent = $this;
-                    $push_func($this->children, $child);
-                }
-            }
-        }
-
-        $sib_pos = $node->get_parent_child_pos();
-        unset($node->parent->children[$sib_pos]);
-        array_splice($node->parent->children, 0, 0);
-
-        unset($node);
     }
 
-    function add_data_cell($key, $value_pos){
+    function add_data_cell($key, $value_pos)
+    {
         $this->keys [] = $key;
         sort($this->keys);
         $key_pos = $this->get_cell_pos($key);
@@ -233,15 +141,15 @@ class BNode
 
 //    ---
 
-    function delete_data_cell($key)
+    function delete_data_cell($key, $child_pos = null)
     {
-        unset($this->keys[$key]);
-    }
+        $pos = $this->get_cell_pos($key);
+        unset($this->keys[$pos]);
+        unset($this->values_pos[$pos]);
 
-//    --
-
-    function update_parent_pos()
-    {
-
+        if(!is_null($child_pos)){
+            unset($this->children_pos[$child_pos]);
+//            array_splice($this->children, 0, 0);
+        }
     }
 }
