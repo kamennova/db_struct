@@ -232,43 +232,38 @@ class BTree
 
 
     /**
-     * @param BNode $del_location
+     * @param BNode $node
      * @param int $key
      * @return boolean
      */
-    function delete_from_node($del_location, $key)
+    function delete_from_node($node, $key)
     {
-        if ($del_location->is_leaf()) {
-            if (count($del_location->keys) >= $this->min_node_len() + 1) {
-                echo "Case 1\n";
-                $this->delete_data_cell($del_location, $key);
-                return true;
-            } else {
-                $this->delete_data_cell($del_location, $key);
-//                return $this->repair_node($del_location);
-                return $this->del_case2($del_location, $key);
-            }
+        if ($node->is_leaf()) {
+            $this->delete_data_cell($node, $key);
+            return $this->repair_deleted($node);
         } else {
-            return $this->del_case3($del_location, $key);
+            return $this->delete_from_internal($node, $key);
         }
     }
-
-    /*function repair_deleted($node){
-        if(count($node->keys) < $this->min_node_len()){
-            $this->rebalance($node);
-        }
-    }
-
-    function rebalance($node){
-
-    }*/
 
     /**
-     * @param BNode $del_location
-     * @param int $key
+     * @param BNode $node
      * @return bool
      */
-    function del_case2($del_location, $key)
+    function repair_deleted($node)
+    {
+        if (count($node->keys) < $this->min_node_len() && !$node->is_root()) {
+            return $this->rebalance($node);
+        }
+
+        return true;
+    }
+
+    /**
+     * @param BNode $node
+     * @return bool
+     */
+    function rebalance($node)
     {
         $is_right = true; // if node's immediate sibling is on the right
         echo 'case2';
@@ -276,59 +271,57 @@ class BTree
         /**
          * @var BNode $parent
          */
-        $parent = $this->get_node($del_location->parent_pos, false);
-        $del_location->parent = $parent;
+        $parent = $this->get_node($node->parent_pos, false);
+        $node->parent = $parent;
 
         /**
          * @var BNode $sibling
          */
-        $sibling = $this->get_node($del_location->get_sibling_pos($parent, $is_right));
-        $s_swap_pos = $sibling->get_extreme_key_pos($is_right);
+        $sibling = $this->get_node($node->get_sibling_pos($parent, $is_right));
 
         if ($sibling) {
 
             /* position of key to swap in parent
               (the key is on the right unless the $del_location is the last child) */
-            $p_swap_pos = $del_location->get_parent_child_pos($parent); // todo optimize??
+            $p_child_pos = $node->get_parent_child_pos($parent); // todo optimize??
 
+            $p_swap_pos = $p_child_pos;
             if (!$is_right) {
                 $p_swap_pos--;
             }
 
-            $p_swap_key = $parent->keys[$p_swap_pos];
-            $p_swap_value_pos = $parent->values_pos[$p_swap_pos];
-
             if (count($sibling->keys) >= $this->min_node_len() + 1) {
 
-                $this->del_case2A($del_location, $sibling, $key, $is_right, $p_swap_pos);
+                return $this->rotate($node, $sibling, $is_right, $p_swap_pos);
 
-            } else if ($is_right && $second_sib_pos = $del_location->get_sibling_pos($parent, $is_right, true)) {
+            } else if ($is_right && $other_sib_pos = $node->get_sibling_pos($parent, $is_right, true)) {
 
                 $is_right = false;
                 $p_swap_pos--;
-                $other_sib = $this->get_node($second_sib_pos);
-                $this->del_case2A($del_location, $other_sib, $key, $is_right, $p_swap_pos);
+                $other_sib = $this->get_node($other_sib_pos);
+                return $this->rotate($node, $other_sib, $is_right, $p_swap_pos);
 
-            } else {
-                // $del_key_pos = $del_location->get_cell_pos($key);
+            } else { // merge to the sibling
 
-                // deleting
-                $this->delete_data_cell($parent, $parent->keys[$p_swap_pos]);
-//                unset($parent->keys[$p_swap_pos]);
+                $p_swap_key = $parent->keys[$p_swap_pos];
+                $p_swap_value_pos = $parent->values_pos[$p_swap_pos];
 
-                unset($parent->children_pos[$s_swap_pos]); // todo delete child
-                array_splice($parent->children, 0, 0);
+                // deleting p_swap_key & {$node position as child} from parent node
+                $this->delete_data_cell($parent, $p_swap_key, $p_child_pos);
 
-                // moving parent key to bottom
+                // moving parent data cell to bottom
                 $func = $is_right ? 'array_push' : 'array_unshift';
-                $func($del_location->keys, $p_swap_key);
-                ksort($del_location->keys);
+                $func($node->keys, $p_swap_key);
+                $func($node->values_pos, $p_swap_value_pos);
 
-                $sibling->merge_leaves($del_location, !$is_right); // todo merge sibling in
+                array_splice($node->keys, 0, 0);
+                array_splice($node->values_pos, 0, 0);
 
-                $this->delete_data_cell($sibling, $key);
-//                $sibling->delete_data_cell($key);
-                return true;
+                $sibling->merge_sibling_in($node, $is_right); // todo unset del_loc
+                $this->update_node_str($sibling);
+                $this->erase_node($node->pos);
+
+                return $this->repair_deleted($parent);
             }
         } else {
             echo "OOOOOOOOOOOOOOOOOPS\n";
@@ -337,123 +330,80 @@ class BTree
     }
 
     /**
-     * @param BNode $del_location
+     * @param BNode $node
      * @param BNode $sibling
-     * @param $key
      * @param $is_right
      * @param $p_swap_pos
      * @return bool
      */
-    function del_case2A($del_location, $sibling, $key, $is_right, $p_swap_pos)
+    function rotate($node, $sibling, $is_right, $p_swap_pos)
     {
-        $p_swap_key = $del_location->parent->keys[$p_swap_pos];
-        $p_swap_value_pos = $del_location->parent->values_pos[$p_swap_pos];
+        $p_swap_key = $node->parent->keys[$p_swap_pos];
+        $p_swap_value_pos = $node->parent->values_pos[$p_swap_pos];
 
         // getting data row before swapping
         $s_swap_pos = $sibling->get_extreme_key_pos($is_right);
         $s_swap_key = $sibling->keys[$s_swap_pos];
         $s_swap_value_pos = $sibling->values_pos[$s_swap_pos];
 
-        $this->delete_data_cell($sibling, $s_swap_key);
+        if ($sibling->children_pos) {
+            $s_child_pos = $s_swap_pos === 0 ? 0 : $s_swap_pos + 1;
+        } else {
+            $s_child_pos = null;
+        }
+
+        $this->delete_data_cell($sibling, $s_swap_key, $s_child_pos); // todo delete child
 
         // moving sibling key & value pos to parent
-        $del_location->parent->keys[$p_swap_pos] = $s_swap_key;
-        $del_location->parent->values_pos[$p_swap_pos] = $s_swap_value_pos;
-        $this->update_node_str($del_location->parent);
-
-        $del_location->delete_data_cell($key);
+        $node->parent->keys[$p_swap_pos] = $s_swap_key;
+        $node->parent->values_pos[$p_swap_pos] = $s_swap_value_pos;
+        $this->update_node_str($node->parent);
 
         $func = $is_right ? 'array_push' : 'array_unshift';
 
-        $func($del_location->keys, $p_swap_key); // todo get pos
-        $func($del_location->values_pos, $p_swap_value_pos);
+        $func($node->keys, $p_swap_key); // todo get pos
+        $func($node->values_pos, $p_swap_value_pos);
+        $func($node->children_pos, $s_child_pos);
 
-        $this->update_node_str($del_location);
+        $this->update_node_str($node);
 
         return true;
     }
 
     /**
-     * @param BNode $del_location
+     * @param BNode $node
      * @param int $key
      * @return bool
      */
-    function del_case3($del_location, $key)
+    function delete_from_internal($node, $key)
     {
-        $pos = $del_location->get_cell_pos($key);
+        $pos = $node->get_cell_pos($key);
 
-        /**
-         * @var BNode $child
-         */
-        if ($child = $del_location->children[$pos]) {
+        $left_leaf = $this->descend_to_leaf($node, $key - 1);
 
-            $c_keys_num = count($child->keys);
+        $l_leaf_keys_num = count($left_leaf->keys);
+        $donor = $left_leaf;
+        $donor_key_pos = $l_leaf_keys_num - 1;
 
-            if ($c_keys_num >= $this->min_node_len() + 1) {
+        /* if left leaf should get deficient after key deletion,
+          check if right leaf should; if no, take it as donor */
+        if ($l_leaf_keys_num < $this->min_node_len() + 1 &&
+            $right_leaf = $this->descend_to_leaf($node, $key + 1)) {
 
-                $this->del_case3A($del_location, $child, true, $pos);
-                /*$c_key_pos = $c_keys_num - 1; // last child
-                $c_key = $child->keys[$c_key_pos];
-
-                $del_location->keys[$pos] = $c_key;
-
-                return $this->delete_from_node($child, $c_key);*/
-
-            } else if (
-                /**
-                 * @var BNode $next_child
-                 */
-            $next_child = $this->get_node($del_location->children_pos[$pos + 1])) {
-
-                if (count($next_child->keys) >= $this->min_node_len() + 1) {
-
-                    $this->del_case3A($del_location, $next_child, false, $pos);
-
-                } else {
-
-                    // moving $key=>val data cell to left child
-                    $child->keys[] = $key;
-                    $child->values_pos [] = $del_location->values_pos[$pos];
-//                    ] = $del_location->keys[$key];
-
-                    // deleting data cell from del_location
-                    $del_location->delete_data_cell($key);
-                    // merging the two children
-                    $next_child->merge_sibling_in($child, true);
-
-                    if ($del_location->is_root() && count($del_location->keys) == 0) {
-                        $this->root = $next_child;
-                        $next_child->parent = null;
-                        unset($del_location);
-                    }
-
-                    // recursive deletion of $key
-                    return $this->delete_from_node($next_child, $key);
-                }
-            } else {
-                echo "OOOPS\n";
-                return false;
+            $r_leaf_keys_num = count($right_leaf->keys);
+            if ($r_leaf_keys_num >= $this->min_node_len() + 1) {
+                $donor = $right_leaf;
+                $donor_key_pos = 0;
             }
-        } else {
-            echo "OOOPS\n";
-            return false;
         }
-    }
 
-    /**
-     * @param BNode $del_location
-     * @param BNode $child
-     * @param boolean $is_left - if $child is $del_location's left child
-     * @param int $pos - position of key in $del_location to be deleted
-     * @return bool
-     */
-    function del_case3A($del_location, $child, $is_left, $pos)
-    {
-        $c_key_pos = $child->get_extreme_key_pos($is_left);
-        $c_key = $child->keys[$c_key_pos];
-        $del_location->keys[$pos] = $c_key;
+        $donor_key = $donor->keys[$donor_key_pos];
 
-        return $this->delete_from_node($child, $c_key);
+        $node->keys[$pos] = $donor_key;
+        $node->values_pos[$pos] = $donor->values_pos[$donor_key_pos];
+        $this->update_node_str($node); // todo optimize
+
+        return $this->delete_from_node($donor, $donor_key);
     }
 
 //    ----
@@ -552,11 +502,6 @@ class BTree
         $this->nodes_editor->write($new_pos_str, $node_pos, $parent_start);
     }
 
-    function update_node_child_pos($node_pos, $new_pos)
-    {
-
-    }
-
     /**
      * @param BNode $node
      * @param int $key
@@ -602,19 +547,24 @@ class BTree
         $shift_back_keys = array_slice($node->keys, $key_pos + 1);
         $shift_back_values_pos = array_slice($node->values_pos, $key_pos + 1);
 
-        if($child_pos){
-            if($key_pos == 0){
-//                $ch_pos = 0
-            }
-            $shift_back_children_pos = array_slice()
+        if (!is_null($child_pos)) {
+            echo $child_pos;
         }
 
+        $shift_back_children_pos = (is_null($child_pos) || $child_pos == 0)
+            ? null : array_slice($node->children_pos, $child_pos + 1);
+
         $str = $this->nodes_editor->get_line($node->pos);
-        $this->formatter->delete_data_cell($str, $key_pos, $shift_back_keys, $shift_back_values_pos);
+        $this->formatter->delete_data_cell($str, $key_pos, $shift_back_keys, $shift_back_values_pos, $child_pos,
+            $shift_back_children_pos);
         $this->nodes_editor->write($str, $node->pos);
 
+        $node->delete_data_cell($key, $child_pos); // todo why???
+    }
 
-
-        $node->delete_data_cell($key); // todo why???
+    function erase_node($pos)
+    {
+        $empty_str = str_repeat(Database::$empty_char, $this->formatter->node_length() - 1);
+        $this->nodes_editor->write($empty_str . PHP_EOL, $pos);
     }
 }
