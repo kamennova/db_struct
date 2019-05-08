@@ -167,6 +167,7 @@ class DBLineFormatter
         $str = '';
         $d_empty_str = $this->empty_str . ($this->is_inner_delimited ? $this->delimiter : null);
 
+//        var_dump($children_pos);
         if ($children_pos) {
             foreach ($children_pos as $pos) {
                 $str .= str_pad($pos, $this->pos_len, Database::$empty_char, STR_PAD_LEFT);
@@ -254,16 +255,26 @@ class DBLineFormatter
 
 //    ---
 
-    function delete_data_cell(&$str, $key_pos, $shift_back_keys, $shift_back_values_pos)
+    function delete_data_cell(&$str, $key_pos, $shift_back_keys, $shift_back_values_pos,
+                              $child_pos, $shift_back_children_pos)
     {
+        if ($child_pos) {
+            for ($i = 0; $i < count($shift_back_children_pos); $i++) {
+                $this->edit_property($str, $shift_back_children_pos[$i], $child_pos, 'children_pos');
+                $child_pos++;
+            }
+
+            $this->edit_property($str, '', $child_pos, 'children_pos');
+        }
+
         for ($i = 0; $i < count($shift_back_keys); $i++) {
-            $this->replace_property($str, $shift_back_keys[$i], $key_pos, 'keys');
-            $this->replace_property($str, $shift_back_values_pos[$i], $key_pos, 'values_pos');
+            $this->edit_property($str, $shift_back_keys[$i], $key_pos, 'keys');
+            $this->edit_property($str, $shift_back_values_pos[$i], $key_pos, 'values_pos');
             $key_pos++;
         }
 
-        $this->replace_property($str, '', $key_pos, 'keys');
-        $this->replace_property($str, '', $key_pos, 'values_pos');
+        $this->edit_property($str, '', $key_pos, 'keys');
+        $this->edit_property($str, '', $key_pos, 'values_pos');
     }
 
     function update_node_child()
@@ -284,24 +295,25 @@ class DBLineFormatter
 
     function replace_properties(&$str, $arr, $prop, $pos, $name)
     {
-        $this->replace_property($str, $prop, $pos, $name);
+        $this->edit_property($str, $prop, $pos, $name);
 
         if ($pos < count($arr)) {
             $shifted_elems = array_slice($arr, $pos);
 
             foreach ($shifted_elems as $shifted) {
-                $this->replace_property($str, $shifted, ++$pos, $name);
+                $this->edit_property($str, $shifted, ++$pos, $name);
             }
         }
     }
 
     /**
+     * Function replaces $name property on position $pos with $new value in string $str
      * @param string $str node str to edit
      * @param int $new_value
      * @param int $pos - position of property to be edited
      * @param string $name - property name 'keys' / 'values_pos' / 'children_pos'
      */
-    function replace_property(&$str, $new_value, $pos, $name = 'keys')
+    function edit_property(&$str, $new_value, $pos, $name = 'keys')
     {
         $prop_str = $this->get_pos_str($new_value);
         $start = $this->get_start_pos($name) + $pos * ($this->pos_len + $this->d_len);
